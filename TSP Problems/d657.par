@@ -1,0 +1,3 @@
+PROBLEM_FILE = /content/drive/MyDrive/TSP Problems/d657.tsp
+OUTPUT_TOUR_FILE = /content/drive/MyDrive/TSP Problems/d657.tour
+RUNS = 1
