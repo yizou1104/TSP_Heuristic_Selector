@@ -1,0 +1,41 @@
+[project]
+name = "tsp-heuristics"
+version = "0.1.0"
+description = "Predict the best TSP construction heuristic and optimality gap for a given instance"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+keywords = ["tsp", "traveling-salesman", "heuristics", "optimization", "machine-learning"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "click>=8.0",
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "xgboost>=1.7",
+    "quantile-forest>=1.2",
+    "joblib>=1.2",
+    "tsplib95>=0.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov"]
+train = ["pandas>=1.5"]
+
+[project.scripts]
+tsp-predict = "tsp_heuristics.cli:predict_cli"
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tsp_heuristics = ["data/models/*.pkl.gz"]

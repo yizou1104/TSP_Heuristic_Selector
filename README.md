@@ -1,0 +1,161 @@
+# tsp-heuristics
+
+Predict the best construction heuristic for a TSP instance and estimate its optimality gap — from the command line.
+
+Given a TSPLIB `.tsp` file, this tool computes 11 structural features and runs a pre-trained ML pipeline to answer two questions:
+
+1. **Which heuristic** (Nearest Neighbor, Greedy, Insertion, or Christofides) will produce the cheapest tour?
+2. **How far from optimal** (%) will that tour be, with a 95% prediction interval?
+
+Three model backends are available: **Random Forest** (default), **XGBoost**, and **Logistic Regression**. Models were trained on 160 TSPLIB benchmark instances.
+
+## Quick start
+
+```bash
+pip install tsp-heuristics
+tsp-predict att48.tsp
+```
+
+```
+Instance:        att48  (48 nodes, EUC_2D)
+Best heuristic:  CH
+Predicted gap:   14.2%  [95% CI: 8.9% – 18.7%]
+Model used:      Random Forest (seed=1)
+Probabilities:   CH: 0.59  Greedy: 0.04  Insertion: 0.35  NN: 0.02
+```
+
+## Installation
+
+**From PyPI** (once published):
+```bash
+pip install tsp-heuristics
+```
+
+**From source:**
+```bash
+git clone https://github.com/<your-org>/tsp-heuristics.git
+cd tsp-heuristics
+pip install -e .
+```
+
+## Usage
+
+```
+tsp-predict [OPTIONS] TSP_FILE
+```
+
+`TSP_FILE` is a path to a TSPLIB-format `.tsp` file (EUC_2D, GEO, or EXPLICIT distance matrix).
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model rf\|xgb\|lr` | `rf` | ML model backend |
+| `--seed 1\|2\|3` | `1` | Model seed (RF/XGB only) |
+| `--no-intervals` | off | Suppress 95% CI on the gap |
+| `--json` | off | Machine-readable JSON output |
+| `-V, --version` | — | Show version |
+| `-h, --help` | — | Show help |
+
+### Examples
+
+```bash
+# Default (Random Forest, seed 1, with intervals)
+tsp-predict att48.tsp
+
+# XGBoost, seed 2
+tsp-predict att48.tsp --model xgb --seed 2
+
+# No prediction interval
+tsp-predict att48.tsp --no-intervals
+
+# JSON output (pipe-friendly)
+tsp-predict att48.tsp --json | jq .predicted_heuristic
+
+# Logistic Regression (no intervals available)
+tsp-predict att48.tsp --model lr
+```
+
+### JSON output format
+
+```json
+{
+  "instance": "att48",
+  "n_nodes": 48,
+  "edge_type": "EUC_2D",
+  "predicted_heuristic": "CH",
+  "heuristic_probabilities": {
+    "CH": 0.586,
+    "Greedy": 0.043,
+    "Insertion": 0.351,
+    "NN": 0.020
+  },
+  "predicted_gap_pct": 14.22,
+  "gap_lower_95_pct": 8.86,
+  "gap_upper_95_pct": 18.68,
+  "model": "rf",
+  "seed": 1,
+  "elapsed_s": 0.767
+}
+```
+
+## How it works
+
+For each `.tsp` file, 11 structural features are computed from the distance matrix:
+
+| Feature | Description |
+|---------|-------------|
+| `n` | Number of nodes |
+| `min_edge_weight` | Minimum edge weight |
+| `max_edge_weight` | Maximum edge weight |
+| `std_edge_weight` | Standard deviation of edge weights |
+| `cv_edge_weight` | Coefficient of variation (std/mean) |
+| `edge_weight_skewness` | Skewness of edge weight distribution |
+| `pct_short_edges` | Fraction of edges in the bottom 10th percentile |
+| `triangle_violation_rate` | Fraction of sampled triplets violating triangle inequality |
+| `avg_violation_magnitude` | Mean excess when triangle inequality is violated |
+| `mst_weight` | Total weight of minimum spanning tree |
+| `nn_cost_over_mst` | Nearest-neighbor tour cost divided by MST weight |
+
+**Stage 1** — a classifier predicts which of {NN, Greedy, Insertion, CH} produces the lowest-cost feasible tour.
+
+**Stage 2** — a regressor predicts the optimality gap (% above optimal) for that heuristic. RF and XGB models produce 95% prediction intervals via quantile regression.
+
+## Models
+
+| Backend | Classifier | Gap regressor | Intervals |
+|---------|-----------|--------------|-----------|
+| `rf` (default) | RandomForestClassifier (400 trees) | RandomForestQuantileRegressor | Yes |
+| `xgb` | XGBClassifier | XGBRegressor (quantile, q=0.05/0.5/0.95) | Yes |
+| `lr` | LogisticRegression | LinearRegression | No |
+
+All models are bundled with the package — no download or training step required.
+
+## Retraining
+
+To retrain on your own data (must match `data/Dataset.csv` schema):
+
+```bash
+python scripts/train_and_export.py --data path/to/dataset.csv --out src/tsp_heuristics/data/models/
+pip install -e .   # reinstall to pick up new model files
+```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v
+```
+
+## Citation
+
+If you use this tool in research, please cite the underlying work:
+
+```
+Yi Zou (2026). TSP Heuristic Selector: Predicting Construction Heuristics via
+Instance Feature Analysis. Athena Education.
+```
+
+## License
+
+MIT

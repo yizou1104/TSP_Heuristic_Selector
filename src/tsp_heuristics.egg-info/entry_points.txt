@@ -1,0 +1,2 @@
+[console_scripts]
+tsp-predict = tsp_heuristics.cli:predict_cli
