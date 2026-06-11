@@ -114,7 +114,7 @@ For each `.tsp` file, 11 structural features are computed from the distance matr
 | `pct_short_edges` | Fraction of edges in the bottom 10th percentile |
 | `triangle_violation_rate` | Fraction of sampled triplets violating triangle inequality |
 | `avg_violation_magnitude` | Mean excess when triangle inequality is violated |
-| `mst_weight` | Total weight of minimum spanning tree |
+| `mst_weight` | Total weight of minimum spanning tree, normalised by the mean edge weight |
 | `nn_cost_over_mst` | Nearest-neighbor tour cost divided by MST weight |
 
 **Stage 1** — a classifier predicts which of {NN, Greedy, Insertion, CH} produces the lowest-cost feasible tour.
