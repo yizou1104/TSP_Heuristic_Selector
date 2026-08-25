@@ -24,6 +24,22 @@ at dataset-construction time (see ``extract_all_features`` below and
 anywhere downstream (e.g. in models.py) — the notebook had an earlier,
 double-normalization-prone draft of this step which this reconstruction
 does not carry forward.
+
+SCALE INVARIANCE (S2.1 fix): multiplying every distance in an instance by a
+constant (e.g. converting km to metres) must not change which heuristic is
+predicted best or the optimality-gap percentage, so it must not change the
+Stage-1 feature values either (except where a feature is explicitly meant to
+carry raw scale — see below). ``mst_weight`` was already scale-invariant
+(normalised by ``n * mean_edge_weight``, above). ``min_edge_weight`` and
+``avg_violation_magnitude`` were NOT — they were returned in raw distance
+units. Both are now normalised by ``mean_edge_weight`` in
+``extract_all_features`` below, making them scale-invariant ratios rather
+than raw distances. ``std_edge_weight`` is deliberately left UNNORMALIZED
+(raw units): dividing it by ``mean_edge_weight`` would be mathematically
+identical to ``cv_edge_weight`` (= std/mean), which already exists as its
+own scale-invariant feature — normalising std_edge_weight the same way would
+just duplicate cv_edge_weight. See ``verify_scale_invariance`` at the bottom
+of this module for a runnable check of all of the above.
 """
 
 from __future__ import annotations
@@ -201,6 +217,11 @@ def extract_all_features(dist_matrix) -> dict:
     ``mst_weight`` is normalised by ``n * mean_edge_weight`` exactly once,
     here — this is the single correct place for that normalisation. Do not
     repeat it anywhere else in the pipeline.
+
+    ``min_edge_weight`` and ``avg_violation_magnitude`` are likewise
+    normalised by ``mean_edge_weight`` here (S2.1 fix) so that both are
+    scale-invariant ratios rather than raw distances — see the module
+    docstring for why, and ``verify_scale_invariance`` below for a check.
     """
     dist_matrix = np.asarray(dist_matrix)
     n = dist_matrix.shape[0]
@@ -216,15 +237,72 @@ def extract_all_features(dist_matrix) -> dict:
 
     return {
         "n": n,
-        "min_edge_weight": compute_min_edge_weight(dist_matrix),
+        "min_edge_weight": compute_min_edge_weight(dist_matrix) / mean_edge_weight,
+        # std_edge_weight is INTENTIONALLY left in raw (unnormalized) units.
+        # Dividing it by mean_edge_weight here would be mathematically
+        # identical to cv_edge_weight (= std/mean), which already exists as
+        # its own scale-invariant feature below — normalising std_edge_weight
+        # the same way would just create a duplicate feature. Do not "fix"
+        # this to divide by mean_edge_weight; see the module docstring.
         "std_edge_weight": std_edge_weight,
         "cv_edge_weight": cv_edge_weight,
         "edge_weight_skewness": edge_weight_skewness,
         "pct_short_edges": compute_pct_short_edges(dist_matrix),
         "triangle_violation_rate": compute_triangle_violation_rate(dist_matrix),
-        "avg_violation_magnitude": compute_avg_violation_magnitude(dist_matrix),
+        "avg_violation_magnitude": compute_avg_violation_magnitude(dist_matrix) / mean_edge_weight,
         "mst_weight": mst_weight,
     }
+
+
+def verify_scale_invariance(dist_matrix, scale_factors=(0.01, 10, 1000), tol: float = 1e-6) -> dict:
+    """Check that ``extract_all_features`` behaves correctly under uniform
+    rescaling of ``dist_matrix`` (S2.1).
+
+    For each factor ``k`` in ``scale_factors``, recomputes features on
+    ``k * dist_matrix`` and compares against the unscaled features:
+
+      * Every feature EXCEPT ``std_edge_weight`` should be scale-invariant:
+        its value at scale ``k`` should equal its unscaled value, within
+        ``tol`` relative difference.
+      * ``std_edge_weight`` is expected to scale LINEARLY: its value at
+        scale ``k`` should equal ``k`` times its unscaled value, within
+        ``tol`` relative difference (it is deliberately left in raw units —
+        see the module docstring).
+
+    ``n`` is an integer instance-size feature (not a distance-derived
+    quantity) and is trivially scale-invariant; it is included in the
+    invariant check for completeness.
+
+    Returns a dict keyed by scale factor, each value a dict keyed by feature
+    name, each of THOSE a dict with:
+        {"passed": bool, "unscaled": float, "scaled": float,
+         "expected": float, "relative_diff": float}
+    where ``expected`` is the unscaled value for invariant features, or
+    ``k * unscaled`` for std_edge_weight, and ``relative_diff`` is
+    ``abs(scaled - expected) / max(abs(expected), tol)``.
+    """
+    unscaled = extract_all_features(dist_matrix)
+    dist_matrix = np.asarray(dist_matrix)
+
+    report: dict = {}
+    for k in scale_factors:
+        scaled = extract_all_features(dist_matrix * k)
+        feature_report: dict = {}
+        for name, unscaled_value in unscaled.items():
+            scaled_value = scaled[name]
+            expected = k * unscaled_value if name == "std_edge_weight" else unscaled_value
+            denom = max(abs(expected), tol)
+            relative_diff = abs(scaled_value - expected) / denom
+            feature_report[name] = {
+                "passed": bool(relative_diff <= tol),
+                "unscaled": float(unscaled_value),
+                "scaled": float(scaled_value),
+                "expected": float(expected),
+                "relative_diff": float(relative_diff),
+            }
+        report[k] = feature_report
+
+    return report
 
 
 # The final Stage-1 / Stage-2 feature column lists, shared by build_dataset.py

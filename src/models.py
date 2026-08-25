@@ -41,6 +41,7 @@ from sklearn.metrics import (
     r2_score,
 )
 from sklearn.model_selection import (
+    GroupShuffleSplit,
     StratifiedKFold,
     cross_val_predict,
     cross_validate,
@@ -423,19 +424,28 @@ def fit_gap_regressor_rf_quantile(df_gap: pd.DataFrame, train_files, seed: int =
 def fit_gap_regressor_rf_conformal(df_gap: pd.DataFrame, train_files, seed: int = SEED, alpha: float = ALPHA) -> dict:
     """Original lines ~7686-7737. RandomForestRegressor(squared error),
     n_estimators=200, max_depth=None, min_samples_leaf=2. Calibration split
-    is ROW-LEVEL (train_test_split on the gap-training rows, 20% held out),
-    reproduced faithfully as in the notebook — NOT instance-grouped (that
-    fix is out of scope per the task spec). Conformal score = 90th
-    percentile of absolute calibration residuals in log space, applied
-    symmetrically.
+    is INSTANCE-GROUPED (S2.2 fix): GroupShuffleSplit on the "file" column,
+    20% of TRAINING INSTANCES held out for calibration, so all heuristic-rows
+    of a given instance stay together on one side of the split. This
+    preserves the exchangeability assumption conformal prediction relies on
+    for its coverage guarantee (a plain row-level train_test_split could put
+    different heuristic-rows of the SAME instance into both train and
+    calibration). Conformal score = 90th percentile of absolute calibration
+    residuals in log space, applied symmetrically.
     """
     train_mask = df_gap["file"].isin(train_files)
     X_train_full = df_gap.loc[train_mask, STAGE2_FEATURE_COLUMNS]
     y_train_full = df_gap.loc[train_mask, "gap_log"]
 
-    X_train_proper, X_cal, y_train_proper, y_cal = train_test_split(
-        X_train_full, y_train_full, test_size=0.2, random_state=seed
-    )
+    groups = df_gap.loc[train_mask, "file"]
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
+    train_idx, cal_idx = next(gss.split(X_train_full, y_train_full, groups=groups))
+    X_train_proper, X_cal = X_train_full.iloc[train_idx], X_train_full.iloc[cal_idx]
+    y_train_proper, y_cal = y_train_full.iloc[train_idx], y_train_full.iloc[cal_idx]
+
+    train_proper_files = set(df_gap.loc[train_mask, "file"].iloc[train_idx])
+    cal_files = set(df_gap.loc[train_mask, "file"].iloc[cal_idx])
+    assert train_proper_files.isdisjoint(cal_files), "Instance leakage between train and calibration!"
 
     preprocess = _build_gap_preprocessor()
     model = RandomForestRegressor(n_estimators=200, max_depth=None, min_samples_leaf=2, random_state=seed, n_jobs=-1)
@@ -463,6 +473,8 @@ def fit_gap_regressor_rf_conformal(df_gap: pd.DataFrame, train_files, seed: int 
         "feature_importance": _gap_feature_importance(
             pipeline.named_steps["preprocess"], pipeline.named_steps["regressor"].feature_importances_
         ),
+        "n_train_proper_instances": len(train_proper_files),
+        "n_cal_instances": len(cal_files),
     }
 
 
@@ -523,16 +535,23 @@ def fit_gap_regressor_xgb_quantile(df_gap: pd.DataFrame, train_files, seed: int 
 # ---------------------------------------------------------------------------
 def fit_gap_regressor_xgb_conformal(df_gap: pd.DataFrame, train_files, seed: int = SEED, alpha: float = ALPHA) -> dict:
     """Original lines ~9780-9805. Single XGBRegressor
-    (objective='reg:squarederror'), same row-level 20% calibration split as
-    RF+Conformal, single global conformal score.
+    (objective='reg:squarederror'), same INSTANCE-GROUPED 20% calibration
+    split as RF+Conformal (S2.2 fix — see fit_gap_regressor_rf_conformal's
+    docstring), single global conformal score.
     """
     train_mask = df_gap["file"].isin(train_files)
     X_train_full = df_gap.loc[train_mask, STAGE2_FEATURE_COLUMNS]
     y_train_full = df_gap.loc[train_mask, "gap_log"]
 
-    X_train_proper, X_cal, y_train_proper, y_cal = train_test_split(
-        X_train_full, y_train_full, test_size=0.2, random_state=seed
-    )
+    groups = df_gap.loc[train_mask, "file"]
+    gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
+    train_idx, cal_idx = next(gss.split(X_train_full, y_train_full, groups=groups))
+    X_train_proper, X_cal = X_train_full.iloc[train_idx], X_train_full.iloc[cal_idx]
+    y_train_proper, y_cal = y_train_full.iloc[train_idx], y_train_full.iloc[cal_idx]
+
+    train_proper_files = set(df_gap.loc[train_mask, "file"].iloc[train_idx])
+    cal_files = set(df_gap.loc[train_mask, "file"].iloc[cal_idx])
+    assert train_proper_files.isdisjoint(cal_files), "Instance leakage between train and calibration!"
 
     preprocess = _build_gap_preprocessor()
     model = XGBRegressor(objective="reg:squarederror", random_state=seed, **_XGB_GAP_COMMON_PARAMS)
@@ -560,6 +579,8 @@ def fit_gap_regressor_xgb_conformal(df_gap: pd.DataFrame, train_files, seed: int
         "feature_importance": _gap_feature_importance(
             pipeline.named_steps["preprocess"], pipeline.named_steps["regressor"].feature_importances_
         ),
+        "n_train_proper_instances": len(train_proper_files),
+        "n_cal_instances": len(cal_files),
     }
 
 
@@ -575,7 +596,11 @@ _STAGE2_FIT_FUNCTIONS = {
 # Full integrated pipeline (Stage 1 fit+predict -> Stage 2 fit+predict -> metrics)
 # ---------------------------------------------------------------------------
 def run_integrated_pipeline(
-    df: pd.DataFrame, backbone: str, uncertainty_method: str, seed: int = SEED
+    df: pd.DataFrame,
+    backbone: str,
+    uncertainty_method: str,
+    seed: int = SEED,
+    use_true_heuristic: bool = False,
 ) -> dict:
     """Fixed 80/20 instance-level split (SEED=1 -> 128 train / 32 test
     instances). Stage 1 classifier (RF or XGB, matching `backbone`) is
@@ -585,6 +610,18 @@ def run_integrated_pipeline(
     feature before Stage 2 predicts the gap.
 
     `backbone`: 'rf' or 'xgb'. `uncertainty_method`: 'quantile' or 'conformal'.
+
+    `use_true_heuristic` (S2.3 ablation, default False): when False
+    (default), Stage 2 is fed Stage 1's PREDICTED heuristic label
+    (`pred_heuristic`) — this is the real end-to-end pipeline and exactly
+    reproduces prior behavior. When True, Stage 2 is instead fed the TRUE
+    best heuristic label (`true_heuristic`), simulating a perfect Stage 1 —
+    an oracle scenario used to quantify how much Stage 1's classification
+    errors cost Stage 2's gap-prediction accuracy (see
+    experiments/stage1_ablation.py). This only changes which heuristic label
+    routes into Stage 2's gap regressor; `classifier_accuracy` and the
+    classification results (`true_heuristic`, `predicted_heuristic`,
+    `classifier_correct`) are computed identically either way.
 
     Matches, depending on the combination:
       rf  + quantile  -> original lines ~7029-7513
@@ -630,11 +667,12 @@ def run_integrated_pipeline(
         file = row["file"]
         true_heuristic = y_test_class[pos]
         pred_heuristic = y_pred_class[pos]
+        heuristic_for_stage2 = true_heuristic if use_true_heuristic else pred_heuristic
 
         instance_features = {feat: row[feat] for feat in STAGE1_INSTANCE_FEATURES}
-        point, lower, upper = predict_gap(instance_features, pred_heuristic)
+        point, lower, upper = predict_gap(instance_features, heuristic_for_stage2)
 
-        true_gap_row = df_gap[(df_gap["file"] == file) & (df_gap["heuristic"] == pred_heuristic)]
+        true_gap_row = df_gap[(df_gap["file"] == file) & (df_gap["heuristic"] == heuristic_for_stage2)]
         true_gap = true_gap_row["optimality_gap"].iloc[0] if len(true_gap_row) else np.nan
 
         cost_row = df_full[
