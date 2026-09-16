@@ -1,0 +1,5 @@
+feature,max_depth,cv_accuracy
+(majority baseline),,0.5562
+cv_edge_weight,2,0.8188
+min_edge_weight,2,0.85
+avg_violation_magnitude,2,0.9438

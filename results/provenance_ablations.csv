@@ -1,0 +1,16 @@
+experiment,condition,n_test,accuracy
+A_type_ablation,with_type,160,0.8
+A_type_ablation,without_type,160,0.8
+B1_tsplib_scored,cv_scored_on_tsplib,105,0.7619047619047619
+B2_train_generated,train_gen_test_tsplib,105,0.17142857142857143
+B_baseline,always_CH,105,0.7047619047619048
+C_leave_one_family_out,held_gen_A_random,13,0.0
+C_baseline,held_gen_A_random_majority,13,1.0
+C_leave_one_family_out,held_gen_B_clustered,13,0.7692307692307693
+C_baseline,held_gen_B_clustered_majority,13,0.7692307692307693
+C_leave_one_family_out,held_gen_C_chard,29,0.8620689655172413
+C_baseline,held_gen_C_chard_majority,29,0.8620689655172413
+C_leave_one_family_out,held_TSPLIB,105,0.17142857142857143
+C_baseline,held_TSPLIB_majority,105,0.7047619047619048
+D_drop_std_edge_weight,with_std,160,0.8
+D_drop_std_edge_weight,without_std,160,0.8

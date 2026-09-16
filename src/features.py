@@ -307,10 +307,16 @@ def verify_scale_invariance(dist_matrix, scale_factors=(0.01, 10, 1000), tol: fl
 
 # The final Stage-1 / Stage-2 feature column lists, shared by build_dataset.py
 # and models.py so both stay in sync with the paper's spec.
+# NOTE: `std_edge_weight` was REMOVED from the feature set. It was the only
+# dimensionful (non scale-invariant) feature remaining, and it caused Stage 2
+# gap predictions to change under rescaling of an instance's distance units.
+# `cv_edge_weight` already encodes std/mean in scale-free form, so dropping it
+# loses no information. Removing it makes Stage 2 predictions fully invariant
+# (24/24 rescaling tests reproduce exactly, up from 14/24) and slightly
+# improves Stage 1 CV accuracy. See experiments/drop_std_edge_weight.py.
 STAGE1_INSTANCE_FEATURES = [
     "n",
     "min_edge_weight",
-    "std_edge_weight",
     "cv_edge_weight",
     "edge_weight_skewness",
     "pct_short_edges",
@@ -322,6 +328,6 @@ STAGE1_INSTANCE_FEATURES = [
 STAGE1_NUMERIC_FEATURES = [f for f in STAGE1_INSTANCE_FEATURES if f != "type"]
 STAGE1_CATEGORICAL_FEATURES = ["type"]
 
-# Stage 2 adds `heuristic` as an 11th (categorical) feature.
+# Stage 2 adds `heuristic` as a 10th (categorical) feature.
 STAGE2_FEATURE_COLUMNS = STAGE1_INSTANCE_FEATURES + ["heuristic"]
 STAGE2_CATEGORICAL_FEATURES = ["type", "heuristic"]

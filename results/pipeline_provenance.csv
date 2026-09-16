@@ -1,0 +1,32 @@
+item,computed,paper_stated,status
+"total instances (best_rows, Stage 1 label table)",160,160.0,MATCH
+total Stage 2 gap rows (non-null optimality_gap),624,,n/a
+distinct instances contributing gap rows,160,,n/a
+gap rows per instance (should be 4: one per heuristic),3.9,,n/a
+n_splits,5,,n/a
+total instances entering CV,160,,n/a
+class counts (all 160 instances),"{'CH': 75, 'Insertion': 46, 'Greedy': 31, 'NN': 8}",,n/a
+fold 0: train size / test size,128 / 32,,n/a
+fold 0: test-fold class counts,"{'CH': 15, 'Insertion': 10, 'Greedy': 6, 'NN': 1}",,n/a
+fold 1: train size / test size,128 / 32,,n/a
+fold 1: test-fold class counts,"{'CH': 15, 'Insertion': 9, 'Greedy': 6, 'NN': 2}",,n/a
+fold 2: train size / test size,128 / 32,,n/a
+fold 2: test-fold class counts,"{'CH': 15, 'Insertion': 9, 'Greedy': 6, 'NN': 2}",,n/a
+fold 3: train size / test size,128 / 32,,n/a
+fold 3: test-fold class counts,"{'CH': 15, 'Insertion': 9, 'Greedy': 6, 'NN': 2}",,n/a
+fold 4: train size / test size,128 / 32,,n/a
+fold 4: test-fold class counts,"{'CH': 15, 'Insertion': 9, 'Greedy': 7, 'NN': 1}",,n/a
+train instances,128,128.0,MATCH
+test instances,32,32.0,MATCH
+train+test instances sum to total?,True,,n/a
+train/test instance sets disjoint?,True,,n/a
+Stage 2 gap rows on train side (4 x train instances),498,,n/a
+Stage 2 gap rows on test side (4 x test instances),126,,n/a
+rf: fit-side instances,102,102.0,MATCH
+rf: calibration-side instances,26,26.0,MATCH
+rf: fit + calibration == 128 train instances?,True,,n/a
+xgb: fit-side instances,102,102.0,MATCH
+xgb: calibration-side instances,26,26.0,MATCH
+xgb: fit + calibration == 128 train instances?,True,,n/a
+rf: independently re-derived fit/cal disjoint?,True,,n/a
+xgb: independently re-derived fit/cal disjoint?,True,,n/a
